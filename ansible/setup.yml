@@ -6,7 +6,7 @@
   - name: Show linux user
     command: whoami
     register: current_user
-    changed-when: false
+    changed_when: false
 
   - name: Display linux user
     debug:
