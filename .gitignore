@@ -19,3 +19,6 @@ terraform.rc
 # OS / editor
 .DS_Store
 .vscode/
+
+#Key Pair FIle
+project3-ansible-key.pem

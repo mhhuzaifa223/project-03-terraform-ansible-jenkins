@@ -1,13 +1,24 @@
-- name: Configure local linux machine
-  hosts: local
-  become: false
+- name: Configure EC2 web server
+  hosts: web
+  become: true
 
   tasks:
-  - name: Show linux user
-    command: whoami
-    register: current_user
+  - name: Install Nginx
+    ansible.builtin.dnf:
+      name: nginx
+      state: present
+
+  - name: Enable and start Nginx
+    ansible.builtin.systemd:
+      name: nginx
+      state: started
+      enabled: true
+
+  - name: Verify Nginx service
+    ansible.builtin.command: systemctl is-active nginx
+    register: nginx_status
     changed_when: false
 
-  - name: Display linux user
-    debug:
-      msg: "Running as {{ current_user.stdout }}"
+  - name: Display Nginx status
+    ansible.builtin.debug:
+      msg: "Nginx status: {{ nginx_status.stdout }}"
