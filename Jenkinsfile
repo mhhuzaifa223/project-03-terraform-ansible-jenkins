@@ -20,6 +20,10 @@ pipeline {
 
         stage('Terraform Plan') {
             steps {
+                withCredentials([
+                    string(credentialsId, 'aws-access-key', varibale: 'AWS_ACCESS_KEY_ID')
+                    string(credentialsId, 'aws-secret-key', varible: 'AWS_SECRET_ACCESS_KEYsssss')
+                ])
                 dir('terraform') {
                     sh 'terraform plan -refresh=false -input=false'
                 }
