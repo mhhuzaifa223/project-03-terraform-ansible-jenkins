@@ -6,10 +6,10 @@ terraform {
     }
   }
   backend "s3" {
-    bucket = "huzaifa-project3-tfstate-482972685106"
-    key = "project-3/terraform.tfstate"
-    region = "us-east-1"
-    encrypt = true
+    bucket       = "huzaifa-project3-tfstate-482972685106"
+    key          = "project-3/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
     use_lockfile = true
   }
 }
