@@ -1,3 +1,4 @@
+
 pipeline {
     agent any
 
@@ -53,16 +54,61 @@ pipeline {
             }
         }
 
-        stage('Test SSH to EC2') {
+        stage('Start Nginx with AWS SSM') {
             steps {
-                sshagent(credentials: ['ec2-ssh-key']) {
+                withCredentials([
+                    string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
                     sh '''
                         set -e
-                        ssh -o BatchMode=yes \
-                            -o ConnectTimeout=10 \
-                            -o StrictHostKeyChecking=accept-new \
-                            ec2-user@100.54.210.137 \
-                            'whoami'
+
+                        COMMAND_ID=$(aws ssm send-command \
+                            --region us-east-1 \
+                            --instance-ids i-059bafcf05c289dc0 \
+                            --document-name AWS-RunShellScript \
+                            --parameters 'commands=["sudo systemctl enable --now nginx","sudo systemctl is-active nginx"]' \
+                            --query 'Command.CommandId' \
+                            --output text)
+
+                        echo "SSM Command ID: $COMMAND_ID"
+
+                        for i in $(seq 1 12); do
+                            STATUS=$(aws ssm get-command-invocation \
+                                --region us-east-1 \
+                                --command-id "$COMMAND_ID" \
+                                --instance-id i-059bafcf05c289dc0 \
+                                --query 'Status' \
+                                --output text 2>/dev/null || true)
+
+                            echo "SSM status: $STATUS"
+
+                            if [ "$STATUS" = "Success" ]; then
+                                aws ssm get-command-invocation \
+                                    --region us-east-1 \
+                                    --command-id "$COMMAND_ID" \
+                                    --instance-id i-059bafcf05c289dc0 \
+                                    --query 'StandardOutputContent' \
+                                    --output text
+                                exit 0
+                            fi
+
+                            if [ "$STATUS" = "Failed" ] || \
+                               [ "$STATUS" = "Cancelled" ] || \
+                               [ "$STATUS" = "TimedOut" ]; then
+                                aws ssm get-command-invocation \
+                                    --region us-east-1 \
+                                    --command-id "$COMMAND_ID" \
+                                    --instance-id i-059bafcf05c289dc0 \
+                                    --output json
+                                exit 1
+                            fi
+
+                            sleep 5
+                        done
+
+                        echo "SSM command did not finish within the wait period."
+                        exit 1
                     '''
                 }
             }
@@ -74,28 +120,65 @@ pipeline {
             }
         }
 
-        stage('Configure EC2 with Ansible') {
+        stage('Configure Local Machine with Ansible') {
             steps {
-                sshagent(credentials: ['ec2-ssh-key']) {
-                    sh '''
-                        set -e
-                        ansible-playbook \
-                            -i ansible/inventory.ini \
-                            ansible/setup.yml
-                    '''
-                }
+                sh 'ansible-playbook -i ansible/inventory.ini ansible/setup.yml'
             }
         }
 
-        stage('Verify Nginx over SSH') {
+        stage('Verify Nginx over SSM') {
             steps {
-                sshagent(credentials: ['ec2-ssh-key']) {
+                withCredentials([
+                    string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
                     sh '''
                         set -e
-                        ssh -o BatchMode=yes \
-                            -o ConnectTimeout=10 \
-                            ec2-user@100.54.210.137 \
-                            'systemctl is-active nginx'
+
+                        COMMAND_ID=$(aws ssm send-command \
+                            --region us-east-1 \
+                            --instance-ids i-059bafcf05c289dc0 \
+                            --document-name AWS-RunShellScript \
+                            --parameters 'commands=["systemctl is-active nginx"]' \
+                            --query 'Command.CommandId' \
+                            --output text)
+
+                        echo "Verification Command ID: $COMMAND_ID"
+
+                        for i in $(seq 1 12); do
+                            STATUS=$(aws ssm get-command-invocation \
+                                --region us-east-1 \
+                                --command-id "$COMMAND_ID" \
+                                --instance-id i-059bafcf05c289dc0 \
+                                --query 'Status' \
+                                --output text 2>/dev/null || true)
+
+                            if [ "$STATUS" = "Success" ]; then
+                                aws ssm get-command-invocation \
+                                    --region us-east-1 \
+                                    --command-id "$COMMAND_ID" \
+                                    --instance-id i-059bafcf05c289dc0 \
+                                    --query 'StandardOutputContent' \
+                                    --output text
+                                exit 0
+                            fi
+
+                            if [ "$STATUS" = "Failed" ] || \
+                               [ "$STATUS" = "Cancelled" ] || \
+                               [ "$STATUS" = "TimedOut" ]; then
+                                aws ssm get-command-invocation \
+                                    --region us-east-1 \
+                                    --command-id "$COMMAND_ID" \
+                                    --instance-id i-059bafcf05c289dc0 \
+                                    --output json
+                                exit 1
+                            fi
+
+                            sleep 5
+                        done
+
+                        echo "Nginx verification timed out."
+                        exit 1
                     '''
                 }
             }
