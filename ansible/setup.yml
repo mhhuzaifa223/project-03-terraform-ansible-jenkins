@@ -1,13 +1,33 @@
-- name: Configure local Linux machine
+- name: Run Linux health checks
   hosts: local
-  become: false
+  connection: local
+  gather_facts: true
 
   tasks:
-  - name: Show Linux user
+  - name: Check current user
     command: whoami
     register: current_user
     changed_when: false
 
-  - name: Display Linux user
+  - name: Check system uptime
+    command: uptime -p
+    register: system_uptime
+    changed_when: false
+
+  - name: Check root filesystem usage
+    command: df -P /
+    register: disk_usage
+    changed_when: false
+
+  - name: Check available memory
+    command: free -h
+    register: memory_usage
+    changed_when: false
+
+  - name: Display health check report
     debug:
-      msg: "Running as {{ current_user.stdout }}"
+      msg:
+      - "Ansible execution user: {{ current_user.stdout }}"
+      - "System uptime: {{ system_uptime.stdout }}"
+      - "Root disk usage: {{ disk_usage.stdout_lines[1] }}"
+      - "Memory report: {{ memory_usage.stdout_lines[1] }}"
