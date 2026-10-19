@@ -24,6 +24,7 @@ resource "aws_s3_bucket" "project3" {
 
 resource "aws_instance" "project3" {
   ami                    = "ami-0856027a77429315a"
+  key_name               = "project3-ansible-key"
   instance_type          = "t3.small"
   subnet_id              = "subnet-0ef512135f651951d"
   vpc_security_group_ids = [aws_security_group.project3.id]
