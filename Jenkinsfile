@@ -53,58 +53,16 @@ pipeline {
             }
         }
 
-        stage('Configure EC2 via SSM') {
+        stage('Test SSH to EC2') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'aws-access-key', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
+                sshagent(credentials: ['ec2-ssh-key']) {
                     sh '''
                         set -e
-                        export AWS_DEFAULT_REGION=us-east-1
-
-                        COMMAND_ID=$(aws ssm send-command \
-                            --instance-ids i-059bafcf05c289dc0 \
-                            --document-name AWS-RunShellScript \
-                            --parameters 'commands=["sudo systemctl enable --now nginx","sudo systemctl is-active nginx"]' \
-                            --query 'Command.CommandId' \
-                            --output text)
-
-                        echo "SSM Command ID: $COMMAND_ID"
-
-                        for attempt in $(seq 1 12); do
-                            STATUS=$(aws ssm get-command-invocation \
-                                --command-id "$COMMAND_ID" \
-                                --instance-id i-059bafcf05c289dc0 \
-                                --query 'Status' \
-                                --output text 2>/dev/null || true)
-
-                            echo "EC2 configuration status: $STATUS"
-
-                            if [ "$STATUS" = "Success" ]; then
-                                aws ssm get-command-invocation \
-                                    --command-id "$COMMAND_ID" \
-                                    --instance-id i-059bafcf05c289dc0 \
-                                    --query '[Status,StandardOutputContent]' \
-                                    --output text
-                                exit 0
-                            fi
-
-                            case "$STATUS" in
-                                Failed|Cancelled|TimedOut)
-                                    aws ssm get-command-invocation \
-                                        --command-id "$COMMAND_ID" \
-                                        --instance-id i-059bafcf05c289dc0 \
-                                        --output json
-                                    exit 1
-                                    ;;
-                            esac
-
-                            sleep 5
-                        done
-
-                        echo "SSM command did not finish within 60 seconds."
-                        exit 1
+                        ssh -o BatchMode=yes \
+                            -o ConnectTimeout=10 \
+                            -o StrictHostKeyChecking=accept-new \
+                            ec2-user@100.54.210.137 \
+                            'whoami'
                     '''
                 }
             }
@@ -116,9 +74,30 @@ pipeline {
             }
         }
 
-        stage('Run Ansible') {
+        stage('Configure EC2 with Ansible') {
             steps {
-                sh 'ansible-playbook -i ansible/inventory.ini ansible/setup.yml'
+                sshagent(credentials: ['ec2-ssh-key']) {
+                    sh '''
+                        set -e
+                        ansible-playbook \
+                            -i ansible/inventory.ini \
+                            ansible/setup.yml
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Nginx over SSH') {
+            steps {
+                sshagent(credentials: ['ec2-ssh-key']) {
+                    sh '''
+                        set -e
+                        ssh -o BatchMode=yes \
+                            -o ConnectTimeout=10 \
+                            ec2-user@100.54.210.137 \
+                            'systemctl is-active nginx'
+                    '''
+                }
             }
         }
     }
@@ -129,7 +108,7 @@ pipeline {
         }
 
         failure {
-            echo 'Pipeline failed. Check the stage logs.'
+            echo 'Pipeline failed. Check the failed stage logs.'
         }
     }
 }
