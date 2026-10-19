@@ -10,8 +10,8 @@ pipeline {
 
         stage('Terraform Validation') {
             steps {
+                sh 'terraform fmt  -check'
                 dir('terraform') {
-                    sh 'terraform fmt  -check'
                     sh 'terraform init -backend=false'
                     sh 'terraform validate'
                 }
